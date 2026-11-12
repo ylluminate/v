@@ -166,9 +166,9 @@ unit combines them: `RateUnit{ unit: 'frames', prefixes: progress.UnitPrefixList
   still restores the cursor if your handler ends the program with `exit()`. You can also set
   `MultiBarOptions{ hide_cursor: false }`.
 - **When it draws live.** For stdout and stderr it uses V's own check
-  (`term.can_show_color_on_*`): a terminal, `TERM` not `dumb`, and the `VCOLORS=always|never`
-  override is honored. `NO_COLOR` does not apply, since it concerns colour and not cursor
-  control. `MultiBarOptions.force` draws regardless.
+  (`term.supports_escape_sequences`): a terminal, `TERM` not `dumb`, and the
+  `VCOLORS=always|never` override is honored. `NO_COLOR` does not apply, since it concerns
+  colour and not cursor control. `MultiBarOptions.force` draws regardless.
 - **Windows** (untested): V's runtime enables escape sequence processing when stdout is a
   terminal. If it is not enabled, the bars fall back to plain output. The terminal size is read
   from the stdout console handle.

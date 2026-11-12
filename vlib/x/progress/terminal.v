@@ -19,14 +19,13 @@ const hooks_installed = stdatomic.new_atomic(i64(0))
 // is_interactive reports whether escape sequences can be drawn on `fd`.
 //
 // For stdout and stderr this is the standard library's own check
-// (term.can_show_color_on_*), so it follows the same rules as the rest of V:
+// (term.supports_escape_sequences), so it follows the same rules as the rest of V:
 // the VCOLORS override, TERM=dumb, and on Windows whether the console really
 // has virtual-terminal processing enabled. (It is not about colour, and
 // NO_COLOR does not apply.) Any other fd gets a plain terminal test.
 fn is_interactive(fd int) bool {
 	return match fd {
-		1 { term.can_show_color_on_stdout() }
-		2 { term.can_show_color_on_stderr() }
+		1, 2 { term.supports_escape_sequences(fd) }
 		else { os.is_atty(fd) > 0 && os.getenv('TERM') != 'dumb' }
 	}
 }

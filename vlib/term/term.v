@@ -18,7 +18,8 @@ __global can_show_color_on_stdout_cache = 0
 __global can_show_color_on_stderr_cache = 0
 
 // can_show_color_on_stdout returns true, if colors are allowed in stdout.
-// It returns false otherwise.
+// It returns false otherwise, including when `NO_COLOR` is set and not empty,
+// unless `VCOLORS=always` is set.
 pub fn can_show_color_on_stdout() bool {
 	match can_show_color_on_stdout_cache {
 		1 { return true }
@@ -26,13 +27,14 @@ pub fn can_show_color_on_stdout() bool {
 		else {}
 	}
 
-	status := supports_escape_sequences(1)
+	status := supports_escape_sequences(1) && !no_color_requested()
 	can_show_color_on_stdout_cache = if status { 1 } else { -1 }
 	return status
 }
 
 // can_show_color_on_stderr returns true, if colors are allowed in stderr.
-// It returns false otherwise.
+// It returns false otherwise, including when `NO_COLOR` is set and not empty,
+// unless `VCOLORS=always` is set.
 pub fn can_show_color_on_stderr() bool {
 	match can_show_color_on_stderr_cache {
 		1 { return true }
@@ -40,7 +42,7 @@ pub fn can_show_color_on_stderr() bool {
 		else {}
 	}
 
-	status := supports_escape_sequences(2)
+	status := supports_escape_sequences(2) && !no_color_requested()
 	can_show_color_on_stderr_cache = if status { 1 } else { -1 }
 	return status
 }
@@ -198,8 +200,26 @@ fn imax(x int, y int) int {
 	return if x > y { x } else { y }
 }
 
+// no_color_requested reports whether the `NO_COLOR` environment variable asks for output
+// without color (see https://no-color.org). An explicit `VCOLORS=always` still wins.
 @[manualfree]
-fn supports_escape_sequences(fd int) bool {
+fn no_color_requested() bool {
+	no_color := os.getenv('NO_COLOR')
+	vcolors_override := os.getenv('VCOLORS')
+	defer {
+		unsafe {
+			no_color.free()
+			vcolors_override.free()
+		}
+	}
+	return no_color != '' && vcolors_override != 'always'
+}
+
+// supports_escape_sequences returns true, if `fd` can show ANSI escape sequences.
+// It follows `VCOLORS=always|never` and `TERM=dumb`, but not `NO_COLOR`, which is only about
+// color. Use `can_show_color_on_stdout`/`can_show_color_on_stderr` to decide about colors.
+@[manualfree]
+pub fn supports_escape_sequences(fd int) bool {
 	vcolors_override := os.getenv('VCOLORS')
 	defer {
 		unsafe { vcolors_override.free() }
