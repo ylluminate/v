@@ -73,8 +73,8 @@ See the `/examples/term.ui/` folder for more usage examples.
     mouse for regular text selection and copy/paste.
 - `window_title string` - sets the title of the terminal window.
     This may be changed later, by calling the `set_window_title()` method.
-- `reset []int = [1, 2, 3, 4, 6, 7, 8, 9, 11, 13, 14, 15, 19]` - a list of reset signals,
-    to setup handlers to cleanup the terminal state when they're received.
+- `reset []os.Signal = [.hup, .int, .quit, .ill, .abrt, .bus, .fpe, .segv, .pipe, .alrm, .term]`
+    A list of reset signals, to setup handlers to cleanup the terminal state when they're received.
     You should not need to change this, unless you know what you're doing.
 
 All of these fields may be omitted, in which case, the default value will be used.

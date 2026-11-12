@@ -10,6 +10,8 @@ import term.termios
 
 #include <signal.h>
 
+fn C.raise(sig i32) i32
+
 pub struct C.winsize {
 	ws_row u16
 	ws_col u16
@@ -144,12 +146,16 @@ fn (mut ctx Context) termios_setup() ! {
 		}
 	}) or {}
 	for code in ctx.cfg.reset {
-		os.signal_opt(code, fn (_ os.Signal) {
+		os.signal_opt(code, fn (sig os.Signal) {
 			mut c := ctx_ptr
 			if unsafe { c != 0 } {
 				c.cleanup()
 			}
-			exit(0)
+			restore_terminal_state()
+			// End by the same signal, so the parent sees how the program ended. raise()
+			// keeps it on this thread, where it is blocked until the handler returns.
+			unsafe { C.signal(i32(sig), C.SIG_DFL) }
+			C.raise(i32(sig))
 		}) or {}
 	}
 

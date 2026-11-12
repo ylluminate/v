@@ -56,7 +56,7 @@ fn test_config_defaults() {
 	assert !cfg.mouse_enabled
 	assert !cfg.skip_init_checks
 	assert cfg.use_alternate_buffer
-	assert cfg.reset.len == 13
+	assert cfg.reset.len == 11
 }
 
 fn test_write_ignores_an_empty_string() {
