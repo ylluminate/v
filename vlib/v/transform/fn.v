@@ -2068,7 +2068,18 @@ fn (mut t Transformer) transform_call_args(id flat.NodeId, node flat.Node) flat.
 				if arg_node.kind == .prefix && arg_node.value == '...'
 					&& arg_node.children_count > 0 {
 					spread_id := t.a.child(&arg_node, 0)
-					new_children << t.transform_variadic_spread_arg_for_param(spread_id, variadic_type, param_type)
+					mut spread_arg := t.transform_variadic_spread_arg_for_param(spread_id, variadic_type, param_type)
+					if is_generic_variadic {
+						// Monomorphization infers this call again from its lowered
+						// arguments, in a later stage that does not keep packed-tail
+						// marks. A `__varargs_` temporary still reads as a packed tail
+						// there, so `...arr` is not taken as one element of type `[]T`.
+						array_type := t.semantic_type_name(variadic_type)
+						tmp_name := t.new_temp('varargs')
+						t.pending_stmts << t.make_decl_assign_typed(tmp_name, spread_arg, array_type)
+						spread_arg = t.make_ident(tmp_name)
+					}
+					new_children << spread_arg
 					i++
 					break
 				}
