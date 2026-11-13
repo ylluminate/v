@@ -5842,10 +5842,26 @@ fn (mut g Gen) emit_trailing_comments(end int) {
 		if g.out.len > 0 && g.out.last_n(1) !in [' ', '\t', '\n'] {
 			g.write(' ')
 		}
-		g.write_comment(comment.text)
+		// A block comment with code after it on the same line, as in `f(x /* c */, y)`, stays
+		// inline: ending the line there would put the `,` at the start of the next line.
+		if !comment.text.contains('\n') && g.code_follows_on_line(comment.pos.end) {
+			g.write(comment.text)
+		} else {
+			g.write_comment(comment.text)
+		}
 		g.source_end = comment.pos.end
 		g.comment_i++
 	}
+}
+
+// code_follows_on_line reports whether code, not just blank space or a comment, follows the
+// source offset `offset` on its line.
+fn (g &Gen) code_follows_on_line(offset int) bool {
+	if offset < 0 || offset > g.source.len {
+		return false
+	}
+	rest := g.source[offset..].all_before('\n').trim_space()
+	return rest.len > 0 && !rest.starts_with('//') && !rest.starts_with('/*')
 }
 
 fn (mut g Gen) emit_header_trailing_comments(header_end int, body_start int) {

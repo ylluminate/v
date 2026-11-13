@@ -1,0 +1,18 @@
+import json
+
+struct User {
+	name string
+}
+
+fn to_json(u User) string {
+	return json.encode(u /* compact */)
+}
+
+fn to_pretty_json(u User) string {
+	return json.encode_pretty(u /* pretty */)
+}
+
+fn main() {
+	println(to_json(User{ name: 'bob' }))
+	println(to_pretty_json(User{ name: 'bob' }))
+}

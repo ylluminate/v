@@ -2746,7 +2746,7 @@ fn test_formatter_preserves_attribute_groups_for_semicolon_fields() {
 fn test_formatter_keeps_nested_default_comments_inside_calls() {
 	for tail in ['', ' // tail'] {
 		source := 'struct Comments {\n\tvalue int = make(inner(1 /* unit */)) /* after */ @[x]${tail}\n}\n'
-		want := 'struct Comments {\n\tvalue int = make(inner(1 /* unit */\n\t)) @[x] /* after */${tail}\n}\n'
+		want := 'struct Comments {\n\tvalue int = make(inner(1 /* unit */)) @[x] /* after */${tail}\n}\n'
 		out := vfmt('struct_field_nested_default_comments', source)
 		assert out == want, out
 		assert vfmt('struct_field_nested_default_comments_twice', out) == out
