@@ -714,3 +714,42 @@ fn test_find_all_utf8_safety() {
 	matches2 := r2.find_all('😀!')
 	assert matches2.len > 0
 }
+
+fn test_escapes_in_bracket_classes() {
+	// class escapes inside [...] add their whole set
+	tst_find(r'[\w.-]+', '<john.doe-1@x>', 'john.doe-1')
+	tst_find(r'[\d]+', 'abc 123', '123')
+	tst_find(r'[\s,]+', 'a , b', ' , ')
+	tst_find(r'[\W]+', 'ab, cd', ', ')
+	tst_find(r'[\D]+', '12ab34', 'ab')
+	tst_find(r'[\S]+', '  ab  ', 'ab')
+	tst_find(r'[^\w]+', 'ab, cd', ', ')
+	tst_find(r'[^\d\s]+', '1 2 ab 3', 'ab')
+	tst_find(r'[\a\d]+', 'AB1ab2C', '1ab2')
+	tst_find(r'[\A]+', 'abCDe', 'CD')
+	tst_find(r'[\w]', '\\', 'none')
+	// \W, \D and \S also hold every non-ASCII rune
+	tst_find(r'[\Wa]+', 'xa,éa', 'a,éa')
+	tst_find(r'[^\W]+', 'é_x1é', '_x1')
+	// other escapes stand for one character
+	tst_find(r'[\]\\]+', 'a]\\b', ']\\')
+	tst_find(r'[\-\.]+', 'a.-b', '.-')
+	tst_find(r'[\t\n\r]+', 'a\t\n\rb', '\t\n\r')
+	tst_find(r'[\x41-\x43]+', 'xABCD', 'ABC')
+	tst_find(r'[\X00e9]+', 'café', 'é')
+	// a '-' next to a class escape is literal, as in Perl
+	tst_find(r'[a-\d]+', 'x-a1', '-a1')
+	tst_compile_error(r'[a\]')
+	tst_compile_error(r'[a\')
+	// the hex escapes share one parser inside and outside a class
+	if _ := pcre.compile(r'\X004') {
+		assert false
+	} else {
+		assert err.msg() == r'\X requires exactly 4 hex digits'
+	}
+	if _ := pcre.compile(r'[\xG1]') {
+		assert false
+	} else {
+		assert err.msg() == r'Invalid hex escape \xG1'
+	}
+}

@@ -98,6 +98,7 @@ mut:
 	char_class  []rune // Literal runes for character classes
 	bitmap      [4]u32 // 128-bit bitset for ASCII character classes
 	inverted    bool   // Negation flag for classes
+	non_ascii   bool   // Whether a class holds every non-ASCII rune (\W, \D, \S in [...])
 	ignore_case bool   // Case-insensitive flag
 	dot_all     bool   // Whether '.' matches '\n'
 }
@@ -178,6 +179,7 @@ mut:
 	group_capture_index int = -1
 	char_set            []rune
 	inverted            bool
+	non_ascii           bool
 	ignore_case         bool
 	multiline           bool
 	dot_all             bool
@@ -458,6 +460,7 @@ fn (mut c Compiler) emit_class(node Node) {
 		char_class:  char_class
 		bitmap:      bitmap
 		inverted:    inverted
+		non_ascii:   node.non_ascii
 		ignore_case: node.ignore_case
 	})
 }
@@ -564,6 +567,80 @@ fn (mut c Compiler) emit_logic(node Node) {
 		}
 		else {
 			c.emit_class(node)
+		}
+	}
+}
+
+// parse_hex_escape decodes the digits at pos of \xHH (two hex digits, a character)
+// or \XHHHH (four hex digits, a Unicode codepoint), and returns the position after them.
+fn parse_hex_escape(pattern string, pos int, esc rune) !(rune, int) {
+	digits := if esc == `x` { 2 } else { 4 }
+	if pos + digits > pattern.len {
+		return error('\\${esc} requires exactly ${digits} hex digits')
+	}
+	hex_str := pattern[pos..pos + digits]
+	val := strconv.parse_uint(hex_str, 16, 32) or {
+		return error('Invalid hex escape \\${esc}${hex_str}')
+	}
+	return rune(val), pos + digits
+}
+
+// in_class_escape reports whether the ASCII byte b belongs to \w, \d, \s, \a or \A.
+// \W, \D and \S give the same answer as their lower-case forms; the caller negates it.
+fn in_class_escape(esc rune, b u8) bool {
+	return match esc {
+		`w`, `W` { is_word_char(b) }
+		`d`, `D` { b >= `0` && b <= `9` }
+		`s`, `S` { b == ` ` || (b >= `\t` && b <= `\r`) }
+		`a` { b >= `a` && b <= `z` }
+		else { b >= `A` && b <= `Z` }
+	}
+}
+
+// read_class_atom reads one member of a bracket class at pos and returns it with the
+// position after it. A class escape (\w \W \d \D \s \S \a \A) adds its runes to class
+// and returns true as the third value. Any other escape stands for one rune, as it does
+// outside a class.
+fn read_class_atom(pattern string, pos int, mut class Node) !(rune, int, bool) {
+	c, l := read_rune_at(pattern.str, pattern.len, pos)
+	if c != `\\` {
+		return c, pos + l, false
+	}
+	esc, el := read_rune_at(pattern.str, pattern.len, pos + 1)
+	next := pos + 1 + el
+	match esc {
+		`w`, `W`, `d`, `D`, `s`, `S`, `a`, `A` {
+			negated := esc in [`W`, `D`, `S`]
+			for r := rune(0); r < 128; r++ {
+				if in_class_escape(esc, u8(r)) != negated {
+					class.char_set << r
+				}
+			}
+			if negated {
+				// \W, \D and \S also match every non-ASCII rune
+				class.non_ascii = true
+			}
+			return 0, next, true
+		}
+		`n` {
+			return `\n`, next, false
+		}
+		`r` {
+			return `\r`, next, false
+		}
+		`t` {
+			return `\t`, next, false
+		}
+		`b` {
+			// inside a class \b is a backspace, as in PCRE
+			return rune(0x08), next, false
+		}
+		`x`, `X` {
+			val, after := parse_hex_escape(pattern, next, esc)!
+			return val, after, false
+		}
+		else {
+			return esc, next, false
 		}
 	}
 }
@@ -707,34 +784,45 @@ fn parse_nodes(pattern string, pos_start int, terminator rune, group_counter_sta
 			}
 			`[` {
 				pos += char_len
-				end := pattern.index_after(']', pos) or { -1 }
-				if end == -1 {
-					return error('Unclosed character class')
+				inv := pos < pattern.len && pattern[pos] == `^`
+				if inv {
+					pos++
 				}
-				content := pattern[pos..end]
-				pos = end + 1
-				inv := content.len > 0 && content[0] == `^`
-				mut set := []rune{}
-				mut i := if inv { 1 } else { 0 }
-				for i < content.len {
-					c, l := read_rune_at(content.str, content.len, i)
-					if i + l + 1 < content.len && content[i + l] == `-` {
-						ec, el := read_rune_at(content.str, content.len, i + l + 1)
-						for r := c; r <= ec; r++ {
-							set << r
-						}
-						i += l + 1 + el
-					} else {
-						set << c
-						i += l
-					}
-				}
-				parsed_nodes << Node{
+				mut class := Node{
 					typ:         .char_class
-					char_set:    set
 					inverted:    inv
 					ignore_case: current_flags.ignore_case
 				}
+				for {
+					if pos >= pattern.len {
+						return error('Unclosed character class')
+					}
+					if pattern[pos] == `]` {
+						pos++
+						break
+					}
+					c, next, is_class := read_class_atom(pattern, pos, mut class)!
+					pos = next
+					if is_class {
+						continue
+					}
+					if pos + 1 < pattern.len && pattern[pos] == `-` && pattern[pos + 1] != `]` {
+						ec, after, end_is_class := read_class_atom(pattern, pos + 1, mut class)!
+						pos = after
+						if end_is_class {
+							// a class escape cannot end a range, so '-' is literal
+							class.char_set << c
+							class.char_set << `-`
+							continue
+						}
+						for r := c; r <= ec; r++ {
+							class.char_set << r
+						}
+						continue
+					}
+					class.char_set << c
+				}
+				parsed_nodes << class
 			}
 			`\\` {
 				pos += char_len
@@ -815,35 +903,12 @@ fn parse_nodes(pattern string, pos_start int, terminator rune, group_counter_sta
 							typ: .uppercase_char
 						}
 					}
-					`x` {
-						// \xHH - two hex digits decode to a character
-						if pos + 2 > pattern.len {
-							return error('\\x requires exactly 2 hex digits')
-						}
-						hex_str := pattern[pos..pos + 2]
-						val := strconv.parse_uint(hex_str, 16, 32) or {
-							return error('Invalid hex escape \\x${hex_str}')
-						}
-						pos += 2
+					`x`, `X` {
+						val, next := parse_hex_escape(pattern, pos, esc)!
+						pos = next
 						parsed_nodes << Node{
 							typ:         .chr
-							chr:         rune(val)
-							ignore_case: current_flags.ignore_case
-						}
-					}
-					`X` {
-						// \XHHHH - four hex digits decode to a Unicode codepoint
-						if pos + 4 > pattern.len {
-							return error('\\X requires exactly 4 hex digits')
-						}
-						hex_str := pattern[pos..pos + 4]
-						val := strconv.parse_uint(hex_str, 16, 32) or {
-							return error('Invalid hex escape \\X${hex_str}')
-						}
-						pos += 4
-						parsed_nodes << Node{
-							typ:         .chr
-							chr:         rune(val)
+							chr:         val
 							ignore_case: current_flags.ignore_case
 						}
 					}
@@ -1069,10 +1134,14 @@ fn (r &Regex) vm_match(text string, start_pos int, mut m Machine) ?Match {
 					} else {
 						rn, l := read_rune_at(str_ptr, str_len, sp)
 						cl = l
-						for cr in inst_ptr.char_class {
-							if cr == rn {
-								matched = true
-								break
+						if inst_ptr.non_ascii {
+							matched = true
+						} else {
+							for cr in inst_ptr.char_class {
+								if cr == rn {
+									matched = true
+									break
+								}
 							}
 						}
 					}
