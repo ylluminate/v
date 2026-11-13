@@ -13021,7 +13021,7 @@ fn (mut t Transformer) try_lower_array_method_call(call_id flat.NodeId, node fla
 				method_name := t.resolve_collection_receiver_method_name(base_id, fn_node.value,
 					clean_base_type)
 				if method_name.len > 0 && method_name != array_builtin_method
-					&& method_name != 'Array_string__join'
+					&& method_name !in ['Array_string__join', '[]string.join']
 					&& !t.receiver_method_name_is_open_generic(method_name) {
 					args := t.transform_receiver_method_args(node, base_id, method_name)
 					ret_type_source_id_join := t.receiver_method_return_type(method_name, node.typ)
